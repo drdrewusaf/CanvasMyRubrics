@@ -163,8 +163,8 @@ def get_rubric():
 
 def canvas_rubrics():
     """
-    Build list of lists containing rubric info, assignment info, student info, and
-    submission grades for the selected assignment.  Use that list to write to the
+    Build list of lists containing rubric info, assignment info, student/flight info, and
+    submission grades for the selected assignment.  Uses that list to write to the
     xlsx file.
     """
     global worksheet
@@ -199,7 +199,7 @@ def canvas_rubrics():
         for sub in wantedSubmissions:
             if hasattr(sub, 'rubric_assessment'):  # Check if the student even has a submission/rubric assessment
                 count = 0
-                stuScores = []  # Our list for the current student/submission
+                stuScores = [sub.user_id]  # Our list for the current student/submission, first index is the student ID
                 while count < len(sub.rubric_assessment):
                     for key in sub.rubric_assessment.keys():
                         stuScores.append(sub.rubric_assessment[key]['points'])  # Append individual rubric item scores
@@ -209,6 +209,9 @@ def canvas_rubrics():
     except:
         print(assignment.name + " is probably not published...Skipping.")  # Catch unpublished assignments
         return
+    scoresAll = sorted(scoresAll, key=itemgetter(0))  # Sort this list by student ID
+    for sub in scoresAll:  # Remove the student ID since we're mapping it to a section below
+        sub.pop(0)
 
     flts = course.get_sections(include='students')  # We need a student/flight(section) list
     stdFltList = []
@@ -217,7 +220,7 @@ def canvas_rubrics():
         for s in flt.students:
             stdFltList.append([flt.students[count]['id'], flt.students[count]['sortable_name'], flt.name])
             count += 1
-    xlsxOut = sorted(stdFltList, key=itemgetter(0))  # Because get_multiple_submissions returns data in this order
+    xlsxOut = sorted(stdFltList, key=itemgetter(0))  # Sort this in the same manner as scoresALL
 
     count = 0
     for item in scoresAll:
@@ -227,7 +230,7 @@ def canvas_rubrics():
 
     count = 0
     for item in rubricRatings:
-        xlsxOut.insert(count, item)  # Inserting rubric info
+        xlsxOut.insert(count, item)  # Inserting rubric info at the top
         if count == 1:
             xlsxOut[count].append('Minimum Passing Score')
             count += 1
