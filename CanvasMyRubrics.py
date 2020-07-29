@@ -199,7 +199,7 @@ def canvas_rubrics():
         for sub in wantedSubmissions:
             if hasattr(sub, 'rubric_assessment'):  # Check if the student even has a submission/rubric assessment
                 count = 0
-                stuScores = [sub.user_id]  # Our list for the current student/submission, first index is the student ID
+                stuScores = [sub.user_id]  # Our list for the current student/submission, index[0] is the student ID
                 while count < len(sub.rubric_assessment):
                     for key in sub.rubric_assessment.keys():
                         stuScores.append(sub.rubric_assessment[key]['points'])  # Append individual rubric item scores
