@@ -1,4 +1,5 @@
 import xlsxwriter
+import canvasapi
 from canvasapi import Canvas
 from sys import exit
 from operator import itemgetter
@@ -47,10 +48,19 @@ def build_user():
     try:
         user = canvas.get_user(accountID)
         badUser = False
+        return
+    except canvasapi.exceptions.ResourceDoesNotExist:
+        print("Could not find a user with ID " + str(accountID))
+        return
+    except canvasapi.exceptions.Unauthorized:
+        print("The user ID " + str(accountID) + " is not authorized to use this API key.")
+        exit(1)
+    except canvasapi.exceptions.InvalidAccessToken:
+        print("Invalid API key in APIKEY.txt for " + str(accountID))
+        exit(1)
     except:
-        print("Are you sure " + str(accountID) + " is the correct ID number?")
-    return
-
+        print("Some sort of error occurred creating a user object for " + str(accountID))
+        exit(1)
 
 def ask_course():
     """
@@ -59,9 +69,11 @@ def ask_course():
     available to the user object.
     """
     global uniqueID
+    for crse in courses:
+        print(crse.name)
     while True:
-        uniqueID = input("Enter the unique name for your course (i.e. 20-2 or 20-B), \n"
-                         "or type 'list' for a list of courses available to you:  ")
+        uniqueID = input("Enter the unique name for your course from above (i.e. 20-2 or 20-B). \n"
+                         "Type 'list' to display the list of courses available to you:  ")
         print('\n')
         is_exit(uniqueID)
         if "list" in uniqueID:
@@ -86,7 +98,7 @@ def build_course():
         if uniqueID in crse.name:
             badSearch = False
             courseID = crse.id
-        elif count == coursesLen:
+        elif count > coursesLen:
             print("No course matching", uniqueID, "found.")
             return
         else:
@@ -103,6 +115,7 @@ def select_assignment():
     """
     global assignment
     global assignmentID
+    global badAsgmt
     global wantedSubmissions
     print("Listing assignments for", course.name)
     for assignment in course.get_assignments():
@@ -115,16 +128,22 @@ def select_assignment():
         break
     if "all" in str(assignmentID):
         for asgmt in course.get_assignments():
-            wantedSubmissions = course.get_multiple_submissions(student_ids='all', assignment_ids=str(asgmt.id),
-                                                                include='rubric_assessment')
             assignmentID = str(asgmt.id)
             assignment = course.get_assignment(assignmentID)  # We're getting this for variable name uniqueness
+            wantedSubmissions = course.get_multiple_submissions(student_ids='all', assignment_ids=str(asgmt.id),
+                                                                include='rubric_assessment')
+            badAsgmt = False
             get_rubric()
     else:
+        # try:
+        assignment = course.get_assignment(assignmentID)  # We're getting this for variable name uniqueness
         wantedSubmissions = course.get_multiple_submissions(student_ids='all', assignment_ids=assignmentID,
                                                             include='rubric_assessment')
-        assignment = course.get_assignment(assignmentID)  # We're getting this for variable name uniqueness
+        badAsgmt = False
         get_rubric()
+        # except:
+        #     print("\nCould not find the requested assignment.\n")
+        #     return
     return
 
 
@@ -148,11 +167,14 @@ def get_rubric():
         while count < len(rubricsList):  # Below...current naming conventions are unambiguous in the first 10 chars
             if rubrics[count].title[0:10] in asgmt.name[0:10]:  # They also won't match if you go too far
                 rbrcAsgmtMap.append([rubrics[count].id, asgmt.id])
-            count += 1
+                break
+            else:
+                count += 1
 
     for rbrc in rbrcAsgmtMap:
         if assignmentID in str(rbrc):  # Assignment IDs are more unique than rubric IDs
             rubric = course.get_rubric(rbrc[0])
+            break
 
     if rubric:
         canvas_rubrics()  # If we're good, let's do this thing
@@ -197,21 +219,26 @@ def canvas_rubrics():
     scoresAll = []  # Our full list of scores for each submission
     try:  # We will get an exception if the assignment isn't published
         for sub in wantedSubmissions:
+            count = 0
+            stuScores = [sub.user_id]  # Our list for the current student/submission, index[0] is the student ID
             if hasattr(sub, 'rubric_assessment'):  # Check if the student even has a submission/rubric assessment
-                count = 0
-                stuScores = [sub.user_id]  # Our list for the current student/submission, index[0] is the student ID
                 while count < len(sub.rubric_assessment):
                     for key in sub.rubric_assessment.keys():
-                        stuScores.append(sub.rubric_assessment[key]['points'])  # Append individual rubric item scores
-                        count += 1
+                        if 'blank' in sub.rubric_assessment[key]['rating_id']:
+                            stuScores.append('BLANK')
+                            count += 1
+                        else:
+                            stuScores.append(sub.rubric_assessment[key]['points'])  # Append each rubric item score
+                            count += 1
                 stuScores.append(sub.grade)  # Append this student's overall score
                 scoresAll.append(stuScores)  # Append this student's score list to the full list
-    except:
-        print(assignment.name + " is probably not published...Skipping.")  # Catch unpublished assignments
+    except:  # Catch unpublished assignments - or other errors *shrug*
+        print("Error in processing " + assignment.name + ". Is it published?  Skipping for now.")
         return
     scoresAll = sorted(scoresAll, key=itemgetter(0))  # Sort this list by student ID
-    for sub in scoresAll:  # Remove the student ID since we're mapping it to a section below
-        sub.pop(0)
+    if len(scoresAll) == 0:
+        print(str(assignment.name) + " has no graded rubrics.  Skipping.")
+        return
 
     flts = course.get_sections(include='students')  # We need a student/flight(section) list
     stdFltList = []
@@ -222,15 +249,26 @@ def canvas_rubrics():
             count += 1
     xlsxOut = sorted(stdFltList, key=itemgetter(0))  # Sort this in the same manner as scoresALL
 
-    count = 0
-    for item in scoresAll:
-        xlsxOut[count].extend(scoresAll[count])  # Place student's scores next to their name
-        count += 1
-    xlsxOut.insert(0, rubricItems)
+    scoresCount = 0
+    xlsxCount = 0
+    for item in xlsxOut:
+        if scoresCount <= len(scoresAll) - 1:
+            if item[0] == scoresAll[scoresCount][0]:  # Match student IDs before appending
+                scoresAll[scoresCount].pop(0)  # Remove the redundant student ID
+                xlsxOut[xlsxCount].extend(scoresAll[scoresCount])  # Place student's scores next to their name
+                scoresCount += 1
+                xlsxCount += 1
+            else:
+                xlsxOut[xlsxCount].append('NO SCORED RUBRIC FOUND ON CANVAS')
+                xlsxCount += 1
+        else:
+            xlsxOut[xlsxCount].append('NO SCORED RUBRIC FOUND ON CANVAS')
+            xlsxCount += 1
 
+    xlsxOut.insert(0, rubricItems)  # Inserting rubric info at the top
     count = 0
     for item in rubricRatings:
-        xlsxOut.insert(count, item)  # Inserting rubric info at the top
+        xlsxOut.insert(count, item)  # Inserting more rubric info at the top
         if count == 1:
             xlsxOut[count].append('Minimum Passing Score')
             count += 1
@@ -272,7 +310,7 @@ def is_exit(x):
         pass
 
 
-print("""\nWelcome to this rubric downloader.\nType exit at any prompt to exit the program.\n""")
+print("""\nWelcome to CanvasMyRubrics.\nType exit at any prompt to exit the program.\n""")
 build_canvas()  # Open the Canvas API and create the canvas object
 badUser = True  # This helps us continue to run build_user() when unexpected input is given
 while badUser:
@@ -287,7 +325,9 @@ while badSearch:
 filename = uniqueID + ".xlsx"  # Create a filename based on the course name given by the user
 workbook = xlsxwriter.Workbook(filename)  # Open a workbook - *this overwrites existing files with the same name*
 
-select_assignment()  # Get the user to select and assignment and call get_rubric and canvas_rubrics
+badAsgmt = True
+while badAsgmt:
+    select_assignment()  # Get the user to select and assignment and call get_rubric and canvas_rubrics
 
 workbook.close()  # Close the workbook
 exit(0)
