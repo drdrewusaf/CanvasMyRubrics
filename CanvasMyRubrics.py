@@ -1,7 +1,9 @@
 import xlsxwriter
 import canvasapi
+import pathlib
+import sys
 from canvasapi import Canvas
-from sys import exit
+from cryptography.fernet import Fernet
 from operator import itemgetter
 
 
@@ -12,15 +14,19 @@ def build_canvas():
     """
     global canvas
     apiURL = "https://lms.au.af.edu"
-    try:
-        with open('APIKEY.txt', 'r') as file:
-            apiKEY = file.read()
-    except FileNotFoundError:
-        print("File 'APIKEY.txt' not found! Make sure you place it in the same \n"
-              "folder as this executable.  Exiting.")
-        exit(1)
+    f = Fernet(key)  # This key is from the start of the main pgm
+    apiKey = None
+    while not apiKey:
+        try:
+            with open(apiKeyFile, 'rb') as file:  # We need to decrypt the text from the APIKEY.enc file
+                encapiKEY = file.read()
+                apiKey = f.decrypt(encapiKEY)  # We read this as bytes
+                apiKey = apiKey.decode()  # So we need to decode back to a str
+        except FileNotFoundError:
+            print("File 'APIKEY.enc' not found!")
+            create_apikeyfile()  # If the APIKEY.enc file isn't found, ask the user their key and save it
     file.close()
-    canvas = Canvas(apiURL, apiKEY)
+    canvas = Canvas(apiURL, apiKey)  # Create the canvas object
     return
 
 
@@ -33,7 +39,7 @@ def build_user():
     global badUser
     global user
     while True:
-        accountID = input("Type your Canvas account ID number and press enter, or \n"
+        accountID = input("\nType your Canvas account ID number and press enter, or \n"
                           "type 'help' for instructions to find your account ID:  ")
         print('\n')
         is_exit(accountID)
@@ -41,8 +47,8 @@ def build_user():
             print("\nTo get your account ID, go to Canvas in your web browser and \n"
                   "navigate to a course. Click on 'People' and search for yourself.  \n"
                   "While hovering your mouse cursor over your name, look at the \n"
-                  "bottom of the browser to see a hyperlink.  Your account ID is the \n"
-                  "last number in the link.\n")
+                  "bottom of the browser to see the hyperlink.  Your account ID is \n"
+                  "the last number in the link.\n")
             continue
         break
     try:
@@ -50,17 +56,18 @@ def build_user():
         badUser = False
         return
     except canvasapi.exceptions.ResourceDoesNotExist:
-        print("Could not find a user with ID " + str(accountID))
+        print("Could not find a user with ID", accountID)
         return
-    except canvasapi.exceptions.Unauthorized:
-        print("The user ID " + str(accountID) + " is not authorized to use this API key.")
-        exit(1)
-    except canvasapi.exceptions.InvalidAccessToken:
-        print("Invalid API key in APIKEY.txt for " + str(accountID))
-        exit(1)
+    except (canvasapi.exceptions.Unauthorized, canvasapi.exceptions.InvalidAccessToken) as e:
+        print("Either the user ID", accountID, "is not authorized to use this API key, \n"
+              "or there is an invalid API key in APIKEY.enc.\n")
+        yesno = input("Would you like to change or update your API Key? (Yes/No):  ")
+        fix_apikey(yesno)
+        return
     except:
-        print("Some sort of error occurred creating a user object for " + str(accountID))
-        exit(1)
+        print("Some sort of error occurred creating a user object for ", accountID)
+        sys.exit(1)
+
 
 def ask_course():
     """
@@ -69,11 +76,12 @@ def ask_course():
     available to the user object.
     """
     global uniqueID
+    print("Courses available to you: \n")
     for crse in courses:
         print(crse.name)
     while True:
-        uniqueID = input("Enter the unique name for your course from above (i.e. 20-2 or 20-B). \n"
-                         "Type 'list' to display the list of courses available to you:  ")
+        uniqueID = input("\nEnter the unique name for your course from above (i.e. 20-2 or 20-B)\n"
+                         "or, type 'list' to display the list of courses available to you:  ")
         print('\n')
         is_exit(uniqueID)
         if "list" in uniqueID:
@@ -98,8 +106,8 @@ def build_course():
         if uniqueID in crse.name:
             badSearch = False
             courseID = crse.id
-        elif count > coursesLen:
-            print("No course matching", uniqueID, "found.")
+        elif count == coursesLen:
+            print("No course matching", uniqueID, "found.\n")
             return
         else:
             count += 1
@@ -122,7 +130,7 @@ def select_assignment():
         print(assignment)
     while True:
         print('\n')
-        assignmentID = input("Enter the the assignment ID (in parentheses above) for the \n"
+        assignmentID = input("\nEnter the the assignment ID (in parentheses above) for the \n"
                              "grades you would like to retrieve, or type 'all' for all grades:  ")
         is_exit(assignmentID)
         break
@@ -135,15 +143,15 @@ def select_assignment():
             badAsgmt = False
             get_rubric()
     else:
-        # try:
-        assignment = course.get_assignment(assignmentID)  # We're getting this for variable name uniqueness
-        wantedSubmissions = course.get_multiple_submissions(student_ids='all', assignment_ids=assignmentID,
-                                                            include='rubric_assessment')
-        badAsgmt = False
-        get_rubric()
-        # except:
-        #     print("\nCould not find the requested assignment.\n")
-        #     return
+        try:
+            assignment = course.get_assignment(assignmentID)  # We're getting this for variable name uniqueness
+            wantedSubmissions = course.get_multiple_submissions(student_ids='all', assignment_ids=assignmentID,
+                                                                include='rubric_assessment')
+            badAsgmt = False
+            get_rubric()
+        except canvasapi.exceptions.ResourceDoesNotExist:
+            print("\nCould not find the requested assignment", assignmentID)
+            return
     return
 
 
@@ -179,7 +187,7 @@ def get_rubric():
     if rubric:
         canvas_rubrics()  # If we're good, let's do this thing
     else:
-        print("No match for " + str(assignment))
+        print("No match for", assignment)
         return
 
 
@@ -194,7 +202,7 @@ def canvas_rubrics():
     global submission
     global scoresAll
     global xlsxOut
-    print("Grabbing" + ' ' + assignment.name + " scores.")
+    print("Grabbing", assignment.name, "scores.")
 
     rubricItems = ['Student ID', 'Student Name', 'Flight']  # Establish column headers before rubric items
     rubricRatings = [[], [], []]  # List of lists containing rubric rating options/points for each item
@@ -233,11 +241,11 @@ def canvas_rubrics():
                 stuScores.append(sub.grade)  # Append this student's overall score
                 scoresAll.append(stuScores)  # Append this student's score list to the full list
     except:  # Catch unpublished assignments - or other errors *shrug*
-        print("Error in processing " + assignment.name + ". Is it published?  Skipping for now.")
+        print("Error in processing", assignment.name, ". Is it published?  Skipping for now.")
         return
     scoresAll = sorted(scoresAll, key=itemgetter(0))  # Sort this list by student ID
     if len(scoresAll) == 0:
-        print(str(assignment.name) + " has no graded rubrics.  Skipping.")
+        print(assignment.name, " has no graded rubrics.  Skipping.")
         return
 
     flts = course.get_sections(include='students')  # We need a student/flight(section) list
@@ -299,22 +307,111 @@ def row_writer(data):
     return
 
 
-def is_exit(x):
+def is_exit(exit):
     """
     Check if the  user types exit at any prompt.
     """
-    if "exit" in x:
-        print("See you later!")
-        exit(0)
+    if "exit" in exit:
+        print("\nSee you later!")
+        sys.exit(0)
     else:
         pass
 
 
-print("""\nWelcome to CanvasMyRubrics.\nType exit at any prompt to exit the program.\n""")
+def get_datadir() -> pathlib.Path:
+    """
+    Returns a parent directory path where persistent application data can be stored.
+    This is the best location for the encryption key, all things considered.
+    """
+    home = pathlib.Path.home()
+
+    if sys.platform == "win32":
+        return home / "AppData/Roaming"
+    elif sys.platform == "linux":
+        return home / ".local/share"
+    elif sys.platform == "darwin":
+        return home / "Library/Application Support"
+
+
+def load_key():
+    """
+    Returns the encryption/decryption key as a variable to use later.
+    """
+    try:
+        return open(keyFile, "rb").read()
+    except FileNotFoundError:
+        print("Encryption key not found, generating a new one...")
+        gen_key()
+
+
+def gen_key():
+    """
+    Generate a new encryption key, and save it in the user's application
+    data directory (userDir).
+    """
+    newKey = Fernet.generate_key()
+    with open(keyFile, "wb") as file:
+        file.write(newKey)
+    return
+
+
+def create_apikeyfile():
+    """
+    Write/overwrite the encrypted APIKEY.enc file with a new LMS API Key.
+    """
+    global key
+    if not key:
+        key = load_key()
+    f = Fernet(key)
+    while True:
+        apiKeyIn = input("\nPlease enter the API key you generated on LMS or\n"
+                         "type 'help' for instructions on generating a key:  ")
+        is_exit(apiKeyIn)
+        if "help" in apiKeyIn:
+            print("\nTo generate an API Token/Key on LMS, login and click on\n"
+                  "'Account'>'Settings'.  Under 'Approved Integrations' click\n"
+                  "the '+New Access Token' button.  Fill the form, and click\n"
+                  "the 'Generate Token' button.  A screen will pop up showing\n"
+                  "your new token/key.  *You will not see that key again in its\n"
+                  "entirety after clicking the 'X' in the top corner!* Write it\n"
+                  "down in a **safe** place.  This token/key gives full LMS access\n"
+                  "to any person that possesses it!  CanvasMyRubrics encrypts your\n"
+                  "token when you enter it at the prompt.")
+            continue
+        break
+    apiKeyIn = apiKeyIn.encode()  # We need to encode the API key into bytes for encryption
+    encapiKeyIn = f.encrypt(apiKeyIn)
+    with open(apiKeyFile, "wb") as file:
+        file.write(encapiKeyIn)
+    file.close()
+
+
+def fix_apikey(yesno):
+    if yesno.lower() == 'yes' or yesno.lower() == 'y':
+        create_apikeyfile()
+        build_canvas()
+        return
+    elif yesno.lower() == 'no' or yesno.lower() == 'n':
+        return
+
+
+print("""\nWelcome to CanvasMyRubrics.\nType exit at any prompt to exit the program.""")
+userDir = get_datadir() / "CanvasMyRubrics"
+try:
+    userDir.mkdir(parents=True)
+except FileExistsError:
+    pass
+keyFile = pathlib.Path(userDir / "APIKEY.key")
+apiKeyFile = "APIKEY.enc"
+key = None
+while not key:
+    key = load_key()
+
 build_canvas()  # Open the Canvas API and create the canvas object
 badUser = True  # This helps us continue to run build_user() when unexpected input is given
 while badUser:
     build_user()  # Create a user object to get course info
+key = None  # Clear the key to deter nefarious characters, should be done with it here anyway
 
 courses = user.get_courses()  # We need the course list based on user for build_course() and ask_course()
 
@@ -330,4 +427,6 @@ while badAsgmt:
     select_assignment()  # Get the user to select and assignment and call get_rubric and canvas_rubrics
 
 workbook.close()  # Close the workbook
-exit(0)
+
+print("\nAll requested grades written to", filename, "in the current directory.")
+sys.exit(0)
