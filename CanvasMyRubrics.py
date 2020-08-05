@@ -307,11 +307,11 @@ def row_writer(data):
     return
 
 
-def is_exit(exit):
+def is_exit(ex):
     """
     Check if the  user types exit at any prompt.
     """
-    if "exit" in exit:
+    if "exit" in ex:
         print("\nSee you later!")
         sys.exit(0)
     else:
