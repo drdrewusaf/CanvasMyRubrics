@@ -408,6 +408,7 @@ while not key:
     key = load_key()
 
 build_canvas()  # Open the Canvas API and create the canvas object
+
 badUser = True  # This helps us continue to run build_user() when unexpected input is given
 while badUser:
     build_user()  # Create a user object to get course info
