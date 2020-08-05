@@ -125,7 +125,7 @@ def select_assignment():
     global assignmentID
     global badAsgmt
     global wantedSubmissions
-    print("Listing assignments for", course.name)
+    print("Listing assignments for", course.name, ":\n")
     for assignment in course.get_assignments():
         print(assignment)
     while True:
@@ -241,11 +241,11 @@ def canvas_rubrics():
                 stuScores.append(sub.grade)  # Append this student's overall score
                 scoresAll.append(stuScores)  # Append this student's score list to the full list
     except:  # Catch unpublished assignments - or other errors *shrug*
-        print("Error in processing", assignment.name, ". Is it published?  Skipping for now.")
+        print("Error in processing", assignment.name, "... Is it published?  Skipping for now.")
         return
     scoresAll = sorted(scoresAll, key=itemgetter(0))  # Sort this list by student ID
     if len(scoresAll) == 0:
-        print(assignment.name, " has no graded rubrics.  Skipping.")
+        print(assignment.name, "has no graded rubrics.  Skipping.")
         return
 
     flts = course.get_sections(include='students')  # We need a student/flight(section) list
