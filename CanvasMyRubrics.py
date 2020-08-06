@@ -1,16 +1,18 @@
-import xlsxwriter
-import canvasapi
 import pathlib
 import sys
+from operator import itemgetter
+
+import canvasapi
+import xlsxwriter
 from canvasapi import Canvas
 from cryptography.fernet import Fernet
-from operator import itemgetter
 
 
 def build_canvas():
     """
     Instantiate the Canvas object using the LMS URL and the
-    APIKEY.txt file (you know to keep the key secret).
+    APIKEY.enc file (you know to keep the key secret as best 
+    we can).
     """
     global canvas
     apiURL = "https://lms.au.af.edu"
