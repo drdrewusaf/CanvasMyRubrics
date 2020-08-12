@@ -21,13 +21,12 @@ def build_canvas():
     apiURL = None
     while not apiURL:
         try:
-            with open("APIURL.txt", "r") as urlfile:  # We need to decrypt the text from the APIKEY.enc file
+            with open("APIURL.txt", "r") as urlfile:
                 apiURL = urlfile.read()
         except FileNotFoundError:
             print("File 'APIURL.txt' not found!")
-            create_urlfile()  # If the APIKEY.enc file isn't found, ask the user their key and save it
+            create_urlfile()  # If the APIURL.txt file isn't found, create it
     urlfile.close()
-
     fernet = Fernet(key)  # This key is from the start of the main pgm
     apiKey = None
     while not apiKey:
@@ -50,7 +49,8 @@ def build_canvas():
         return
     except requests.exceptions.ConnectionError:
         yesno = input("A connection occurred creating the Canvas object.  Maybe your\n"
-                      "Canvas URL is incorrect.  Would you like to update it? (Yes/No):  \n")
+                      "Canvas URL is incorrect or your internet connection is down.\n"
+                      "Would you like to update your Canvas URL? (Yes/No):  \n")
         fix_apiurl(yesno)
         return
     except canvasapi.exceptions.InvalidAccessToken:
@@ -351,12 +351,12 @@ def create_urlfile():
     Write/overwrite the APIURL.txt file with a new LMS URL.
     """
     while True:
-        apiURLIn = input("\nPlease enter the URL you use to access LMS, or\n"
-                         "type 'help' for instructions on getting your URL:  ")
+        apiURLIn = input("\nPlease enter the URL you use to access your Canvas system,\n"
+                         "or type 'help' for instructions on getting your URL:  ")
         is_exit(apiURLIn)
         if "help" in apiURLIn:
-            print("\nThe URL you use to access your Canvas is the same as the\n"
-                  "web address you enter into your browser. As an example: if\n"
+            print("\nThe URL you use to access your Canvas system is the same as\n"
+                  "the web address you enter into your browser. As an example: if\n"
                   "you type 'https://lms.yourschool.edu' in your browser to go\n"
                   "to your Canvas, 'https://lms.yourschool.edu' is what you will\n"
                   "type at the prompt asking for your URL.\n")
