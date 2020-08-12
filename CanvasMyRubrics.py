@@ -3,6 +3,7 @@ import sys
 from operator import itemgetter
 
 import canvasapi
+import requests
 import xlsxwriter
 from canvasapi import Canvas
 from cryptography.fernet import Fernet
@@ -15,60 +16,48 @@ def build_canvas():
     we can).
     """
     global canvas
-    apiURL = "https://lms.au.af.edu"
-    f = Fernet(key)  # This key is from the start of the main pgm
+    global badCanvas
+    global courses
+    apiURL = None
+    while not apiURL:
+        try:
+            with open("APIURL.txt", "r") as urlfile:  # We need to decrypt the text from the APIKEY.enc file
+                apiURL = urlfile.read()
+        except FileNotFoundError:
+            print("File 'APIURL.txt' not found!")
+            create_urlfile()  # If the APIKEY.enc file isn't found, ask the user their key and save it
+    urlfile.close()
+
+    fernet = Fernet(key)  # This key is from the start of the main pgm
     apiKey = None
     while not apiKey:
         try:
-            with open(apiKeyFile, 'rb') as file:  # We need to decrypt the text from the APIKEY.enc file
-                encapiKEY = file.read()
-                apiKey = f.decrypt(encapiKEY)  # We read this as bytes
+            with open(apiKeyFile, 'rb') as apifile:  # We need to decrypt the text from the APIKEY.enc file
+                encapiKEY = apifile.read()
+                apiKey = fernet.decrypt(encapiKEY)  # We read this as bytes
                 apiKey = apiKey.decode()  # So we need to decode back to a str
         except FileNotFoundError:
             print("File 'APIKEY.enc' not found!")
             create_apikeyfile()  # If the APIKEY.enc file isn't found, ask the user their key and save it
-    file.close()
-    canvas = Canvas(apiURL, apiKey)  # Create the canvas object
-    return
-
-
-def build_user():
-    """
-    Instantiate a user object using the user's LMS ID...no easy way to get a list of
-    IDs. So they need to retrieve that before using this program. A help option
-    is provided.
-    """
-    global badUser
-    global user
-    while True:
-        accountID = input("\nType your Canvas account ID number and press enter, or \n"
-                          "type 'help' for instructions to find your account ID:  ")
-        print('\n')
-        is_exit(accountID)
-        if "help" in accountID:
-            print("\nTo get your account ID, go to Canvas in your web browser and \n"
-                  "navigate to a course. Click on 'People' and search for yourself.  \n"
-                  "While hovering your mouse cursor over your name, look at the \n"
-                  "bottom of the browser to see the hyperlink.  Your account ID is \n"
-                  "the last number in the link.\n")
-            continue
-        break
+    apifile.close()
     try:
-        user = canvas.get_user(accountID)
-        badUser = False
+        canvas = Canvas(apiURL, apiKey)  # Create the canvas object
+        courses = canvas.get_courses()
+        print("\nHere is a list of courses available to the API Token provided:\n")
+        for crse in courses:
+            print(crse.name)
+        badCanvas = False
         return
-    except canvasapi.exceptions.ResourceDoesNotExist:
-        print("Could not find a user with ID", accountID)
+    except requests.exceptions.ConnectionError:
+        yesno = input("A connection occurred creating the Canvas object.  Maybe your\n"
+                      "Canvas URL is incorrect.  Would you like to update it? (Yes/No):  \n")
+        fix_apiurl(yesno)
         return
-    except (canvasapi.exceptions.Unauthorized, canvasapi.exceptions.InvalidAccessToken) as e:
-        print("Either the user ID", accountID, "is not authorized to use this API key, \n"
-              "or there is an invalid API key in APIKEY.enc.\n")
-        yesno = input("Would you like to change or update your API Key? (Yes/No):  ")
+    except canvasapi.exceptions.InvalidAccessToken:
+        print("There is an invalid API key in APIKEY.enc.\n")
+        yesno = input("Would you like to change or update your API Token? (Yes/No):  ")
         fix_apikey(yesno)
         return
-    except:
-        print("Some sort of error occurred creating a user object for ", accountID)
-        sys.exit(1)
 
 
 def ask_course():
@@ -78,9 +67,9 @@ def ask_course():
     available to the user object.
     """
     global uniqueID
-    print("Courses available to you: \n")
-    for crse in courses:
-        print(crse.name)
+    # print("Courses available to you: \n")
+    # for crse in courses:
+    #     print(crse.name)
     while True:
         uniqueID = input("\nEnter the unique name for your course from above (i.e. 20-2 or 20-B)\n"
                          "or, type 'list' to display the list of courses available to you:  ")
@@ -234,16 +223,16 @@ def canvas_rubrics():
             if hasattr(sub, 'rubric_assessment'):  # Check if the student even has a submission/rubric assessment
                 while count < len(sub.rubric_assessment):
                     for key in sub.rubric_assessment.keys():
-                        if 'blank' in sub.rubric_assessment[key]['rating_id']:
-                            stuScores.append('BLANK')
-                            count += 1
-                        else:
+                        if 'points' in sub.rubric_assessment[key]:
                             stuScores.append(sub.rubric_assessment[key]['points'])  # Append each rubric item score
                             count += 1
-                stuScores.append(sub.grade)  # Append this student's overall score
+                        else:
+                            stuScores.append('BLANK')
+                            count += 1
+                stuScores.append(int(sub.grade))  # Append this student's overall score
                 scoresAll.append(stuScores)  # Append this student's score list to the full list
     except:  # Catch unpublished assignments - or other errors *shrug*
-        print("Error in processing", assignment.name, "... Is it published?  Skipping for now.")
+        print("Error in processing", assignment.name, "... Is it published?  Skipping.")
         return
     scoresAll = sorted(scoresAll, key=itemgetter(0))  # Sort this list by student ID
     if len(scoresAll) == 0:
@@ -357,6 +346,27 @@ def gen_key():
     return
 
 
+def create_urlfile():
+    """
+    Write/overwrite the APIURL.txt file with a new LMS URL.
+    """
+    while True:
+        apiURLIn = input("\nPlease enter the URL you use to access LMS, or\n"
+                         "type 'help' for instructions on getting your URL:  ")
+        is_exit(apiURLIn)
+        if "help" in apiURLIn:
+            print("\nThe URL you use to access your Canvas is the same as the\n"
+                  "web address you enter into your browser. As an example: if\n"
+                  "you type 'https://lms.yourschool.edu' in your browser to go\n"
+                  "to your Canvas, 'https://lms.yourschool.edu' is what you will\n"
+                  "type at the prompt asking for your URL.\n")
+            continue
+        break
+    with open("APIURL.txt", "w") as file:
+        file.write(apiURLIn)
+    file.close()
+
+
 def create_apikeyfile():
     """
     Write/overwrite the encrypted APIKEY.enc file with a new LMS API Key.
@@ -372,13 +382,14 @@ def create_apikeyfile():
         if "help" in apiKeyIn:
             print("\nTo generate an API Token/Key on LMS, login and click on\n"
                   "'Account'>'Settings'.  Under 'Approved Integrations' click\n"
-                  "the '+New Access Token' button.  Fill the form, and click\n"
+                  "the '+New Access Token' button.  Fill in the form, and click\n"
                   "the 'Generate Token' button.  A screen will pop up showing\n"
                   "your new token/key.  *You will not see that key again in its\n"
                   "entirety after clicking the 'X' in the top corner!* Write it\n"
                   "down in a **safe** place.  This token/key gives full LMS access\n"
                   "to any person that possesses it!  CanvasMyRubrics encrypts your\n"
-                  "token when you enter it at the prompt.")
+                  "token when you enter it at the prompt.  So you may delete/toss\n"
+                  "the copy of your token that you wrote down after entering it.\n")
             continue
         break
     apiKeyIn = apiKeyIn.encode()  # We need to encode the API key into bytes for encryption
@@ -388,16 +399,27 @@ def create_apikeyfile():
     file.close()
 
 
-def fix_apikey(yesno):
+def fix_apiurl(yesno):
+    is_exit(yesno)
     if yesno.lower() == 'yes' or yesno.lower() == 'y':
-        create_apikeyfile()
-        build_canvas()
+        create_urlfile()
         return
     elif yesno.lower() == 'no' or yesno.lower() == 'n':
         return
 
 
-print("""\nWelcome to CanvasMyRubrics.\nType exit at any prompt to exit the program.""")
+def fix_apikey(yesno):
+    is_exit(yesno)
+    if yesno.lower() == 'yes' or yesno.lower() == 'y':
+        create_apikeyfile()
+        return
+    elif yesno.lower() == 'no' or yesno.lower() == 'n':
+        print("Please correct the API Token error.")
+        exit(1)
+
+
+print("\nWelcome to CanvasMyRubrics.\n"
+      "Type exit at any prompt to exit the program.\n")
 userDir = get_datadir() / "CanvasMyRubrics"
 try:
     userDir.mkdir(parents=True)
@@ -409,14 +431,11 @@ key = None
 while not key:
     key = load_key()
 
-build_canvas()  # Open the Canvas API and create the canvas object
+badCanvas = True
+while badCanvas:
+    build_canvas()  # Open the Canvas API and create the canvas object
 
-badUser = True  # This helps us continue to run build_user() when unexpected input is given
-while badUser:
-    build_user()  # Create a user object to get course info
 key = None  # Clear the key to deter nefarious characters, should be done with it here anyway
-
-courses = user.get_courses()  # We need the course list based on user for build_course() and ask_course()
 
 badSearch = True  # This helps us continue to run ask_course() when unexpected input is given
 while badSearch:
