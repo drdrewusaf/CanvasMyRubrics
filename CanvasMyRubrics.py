@@ -51,12 +51,14 @@ def build_canvas():
         yesno = input("A connection occurred creating the Canvas object.  Maybe your\n"
                       "Canvas URL is incorrect or your internet connection is down.\n"
                       "Would you like to update your Canvas URL? (Yes/No):  \n")
-        fix_apiurl(yesno)
+        excpt = 'connErr'
+        fix_file(yesno,excpt)
         return
     except canvasapi.exceptions.InvalidAccessToken:
         print("There is an invalid API key in APIKEY.enc.\n")
         yesno = input("Would you like to change or update your API Token? (Yes/No):  ")
-        fix_apikey(yesno)
+        excpt = 'tokenErr'
+        fix_file(yesno,excpt)
         return
 
 
@@ -67,9 +69,6 @@ def ask_course():
     available to the user object.
     """
     global uniqueID
-    # print("Courses available to you: \n")
-    # for crse in courses:
-    #     print(crse.name)
     while True:
         uniqueID = input("\nEnter the unique name for your course from above (i.e. 20-2 or 20-B)\n"
                          "or, type 'list' to display the list of courses available to you:  ")
@@ -121,7 +120,7 @@ def select_assignment():
         print(assignment)
     while True:
         print('\n')
-        assignmentID = input("\nEnter the the assignment ID (in parentheses above) for the \n"
+        assignmentID = input("Enter the the assignment ID (in parentheses above) for the \n"
                              "grades you would like to retrieve, or type 'all' for all grades:  ")
         is_exit(assignmentID)
         break
@@ -272,7 +271,7 @@ def canvas_rubrics():
             xlsxOut[count].append('Minimum Passing Score')
             count += 1
         elif count == 2:
-            xlsxOut[count].append(str(rubric.points_possible * .7))
+            xlsxOut[count].append(int(rubric.points_possible * .7))
         else:
             count += 1
 
@@ -304,7 +303,7 @@ def is_exit(ex):
     """
     if "exit" in ex:
         print("\nSee you later!")
-        sys.exit(0)
+        exit(0)
     else:
         pass
 
@@ -399,23 +398,16 @@ def create_apikeyfile():
     file.close()
 
 
-def fix_apiurl(yesno):
+def fix_file(yesno,excpt):
     is_exit(yesno)
     if yesno.lower() == 'yes' or yesno.lower() == 'y':
-        create_urlfile()
+        if excpt == 'connErr':
+            create_urlfile()
+        elif excpt == 'tokenErr':
+            create_apikeyfile()
         return
     elif yesno.lower() == 'no' or yesno.lower() == 'n':
         return
-
-
-def fix_apikey(yesno):
-    is_exit(yesno)
-    if yesno.lower() == 'yes' or yesno.lower() == 'y':
-        create_apikeyfile()
-        return
-    elif yesno.lower() == 'no' or yesno.lower() == 'n':
-        print("Please correct the API Token error.")
-        exit(1)
 
 
 print("\nWelcome to CanvasMyRubrics.\n"
@@ -446,9 +438,9 @@ workbook = xlsxwriter.Workbook(filename)  # Open a workbook - *this overwrites e
 
 badAsgmt = True
 while badAsgmt:
-    select_assignment()  # Get the user to select and assignment and call get_rubric and canvas_rubrics
+    select_assignment()  # Get the user to select an assignment and call get_rubric and canvas_rubrics
 
 workbook.close()  # Close the workbook
 
 print("\nAll requested grades written to", filename, "in the current directory.")
-sys.exit(0)
+exit(0)
