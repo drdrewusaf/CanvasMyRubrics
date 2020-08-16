@@ -187,7 +187,7 @@ def canvas_rubrics():
     submission grades for the selected assignment.  Uses that list to write to the
     xlsx file.
     """
-    global worksheet
+    global currworksheet
     global studentList
     global submission
     global scoresAll
@@ -279,11 +279,11 @@ def canvas_rubrics():
         worksheetName = str(assignment.name[0:24]) + str(assignmentID)
     else:
         worksheetName = str(assignment.name) + str(assignmentID)
-    worksheet = workbook.add_worksheet(worksheetName)  # Make a new worksheet
-    row_writer(xlsxOut)  # Write it out to the file
+    currworksheet = workbook.add_worksheet(worksheetName)  # Make a new worksheet
+    row_writer(currworksheet, xlsxOut)  # Write it out to the file
 
 
-def row_writer(data):
+def row_writer(wsname, data):
     """
     This builds and writes simple rows in the xlsx from python list of lists.
     """
@@ -291,7 +291,7 @@ def row_writer(data):
     while row < len(data):
         col = 0
         for item in data[row]:
-            worksheet.write(row, col, item)
+            wsname.write(row, col, item)
             col += 1
         row += 1
     return
