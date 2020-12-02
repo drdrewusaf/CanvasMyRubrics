@@ -117,7 +117,10 @@ def select_assignment():
     global wantedSubmissions
     print("Listing assignments for", course.name, ":\n")
     for assignment in course.get_assignments():
-        print(assignment)
+        if "fire" in assignment.name.lower():
+            pass
+        else:
+            print(assignment)
     while True:
         print('\n')
         assignmentID = input("Enter the the assignment ID (in parentheses above) for the \n"
@@ -163,7 +166,10 @@ def get_rubric():
     for asgmt in course.get_assignments():
         count = 0
         while count < len(rubricsList):  # Below...current naming conventions are unambiguous in the first 10 chars
-            if rubrics[count].title[0:10] in asgmt.name[0:10]:  # They also won't match if you go too far
+            if "fire" in str(asgmt.name).lower():
+                # count += 1
+                break
+            elif rubrics[count].title[0:10] in asgmt.name[0:10]:  # They also won't match if you go too far
                 rbrcAsgmtMap.append([rubrics[count].id, asgmt.id])
                 break
             else:
@@ -176,6 +182,9 @@ def get_rubric():
 
     if rubric:
         canvas_rubrics()  # If we're good, let's do this thing
+    elif "fire" in str(assignment).lower():
+        print("Skipping a re-fire assignment.")
+        return
     else:
         print("No match for", assignment)
         return
@@ -228,8 +237,11 @@ def canvas_rubrics():
                         else:
                             stuScores.append('BLANK')
                             count += 1
-                stuScores.append(int(sub.grade))  # Append this student's overall score
-                scoresAll.append(stuScores)  # Append this student's score list to the full list
+                if "BLANK" in stuScores:
+                    scoresAll.append(stuScores)  # Append this student's score list to the full list
+                else:
+                    stuScores.append(int(sub.grade))  # Append this student's overall score
+                    scoresAll.append(stuScores)  # Append this student's score list to the full list
     except:  # Catch unpublished assignments - or other errors *shrug*
         print("Error in processing", assignment.name, "... Is it published?  Skipping.")
         return
@@ -276,10 +288,13 @@ def canvas_rubrics():
             count += 1
 
     if len(rubric.title) >= 25:  # Worksheets have a name length limit of 31 chars and we need unique names
-        worksheetName = str(assignment.name[0:24]) + str(assignmentID)
+        worksheetName = str(assignment.name[0:24])
     else:
-        worksheetName = str(assignment.name) + str(assignmentID)
-    currworksheet = workbook.add_worksheet(worksheetName)  # Make a new worksheet
+        worksheetName = str(assignment.name)
+    try:
+        currworksheet = workbook.add_worksheet(worksheetName)  # Make a new worksheet
+    except xlsxwriter.exceptions.DuplicateWorksheetName:
+        currworksheet = workbook.add_worksheet(worksheetName + str(assignmentID))
     row_writer(currworksheet, xlsxOut)  # Write it out to the file
 
 
